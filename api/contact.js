@@ -28,7 +28,7 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ success: false, message: 'Correo inválido.' });
 
   // Lee MIANDB_URL que apunta a maindb
-  const dbUrl = process.env.MIANDB_URL;
+  const dbUrl = process.env.MAINDB_URL;
   if (!dbUrl)
     return res.status(500).json({ success: false, message: 'MIANDB_URL no configurada.' });
 
