@@ -1,27 +1,10 @@
 {
   "version": 2,
-  "buildCommand": null,
+  "installCommand": "npm install",
+  "buildCommand": "npm install",
   "outputDirectory": ".",
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    },
-    {
-      "src": "/(.*\\.html)",
-      "dest": "/$1"
-    },
-    {
-      "src": "/(.*\\.css)",
-      "dest": "/$1"
-    },
-    {
-      "src": "/(.*\\.js)",
-      "dest": "/$1"
-    },
-    {
-      "src": "/",
-      "dest": "/index.html"
-    }
-  ]
+  "functions": {
+    "api/contact.js":   { "runtime": "nodejs20.x" },
+    "api/admin.api.js": { "runtime": "nodejs20.x" }
+  }
 }
