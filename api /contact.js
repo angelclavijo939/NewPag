@@ -85,4 +85,3 @@ export default async function handler(req) {
     return new Response(JSON.stringify({ success: false, message: 'Error: ' + err.message }), { status: 500, headers });
   }
 }
-
