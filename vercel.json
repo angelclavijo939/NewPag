@@ -2,9 +2,5 @@
   "version": 2,
   "installCommand": "npm install",
   "buildCommand": "npm install",
-  "outputDirectory": ".",
-  "functions": {
-    "api/contact.js":   { "runtime": "nodejs20.x" },
-    "api/admin.api.js": { "runtime": "nodejs20.x" }
-  }
+  "outputDirectory": "."
 }
