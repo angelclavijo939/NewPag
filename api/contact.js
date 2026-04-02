@@ -27,9 +27,10 @@ module.exports = async function handler(req, res) {
   if (!/\S+@\S+\.\S+/.test(correo))
     return res.status(400).json({ success: false, message: 'Correo inválido.' });
 
-  const dbUrl = process.env.DATABASE_URL;
+  // Lee MIANDB_URL que apunta a maindb
+  const dbUrl = process.env.MIANDB_URL;
   if (!dbUrl)
-    return res.status(500).json({ success: false, message: 'DATABASE_URL no configurada.' });
+    return res.status(500).json({ success: false, message: 'MIANDB_URL no configurada.' });
 
   try {
     const sql = neon(dbUrl);
