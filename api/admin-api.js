@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     return res.status(401).json({ success: false, message: 'No autorizado.' });
   }
 
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const pool = new Pool({ connectionString: process.env.MAINDB_URL });
 
   try {
     const search = (req.query.s || '').trim();
