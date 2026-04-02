@@ -33,15 +33,13 @@ export default async function handler(req) {
     return new Response(JSON.stringify({ success: false, message: 'DATABASE_URL no configurada.' }), { status: 500, headers });
 
   try {
-    // Parsear el connection string
-    // postgresql://neondb_owner:PASSWORD@ep-old-rain-anx76mf7-pooler.c-6.us-east-1.aws.neon.tech/neondb
-    const u      = new URL(dbUrl);
-    const user   = decodeURIComponent(u.username);
-    const pass   = decodeURIComponent(u.password);
-    const host   = u.hostname;  // ep-old-rain-anx76mf7-pooler.c-6.us-east-1.aws.neon.tech
-    const dbname = u.pathname.replace('/', '');
+    const u    = new URL(dbUrl);
+    const user = decodeURIComponent(u.username);
+    const pass = decodeURIComponent(u.password);
 
-    // Neon HTTP API — endpoint correcto
+    // Quitar "-pooler" del host para la HTTP API
+    const host = u.hostname.replace('-pooler', '');
+
     const neonApi = `https://${host}/sql`;
 
     async function query(sql, params = []) {
@@ -58,7 +56,6 @@ export default async function handler(req) {
       return JSON.parse(text);
     }
 
-    // Crear tabla si no existe
     await query(`
       CREATE TABLE IF NOT EXISTS Clientes_web (
         Id        SERIAL PRIMARY KEY,
@@ -71,17 +68,14 @@ export default async function handler(req) {
       )
     `);
 
-    // Verificar duplicado por teléfono
     const dup = await query(
-      'SELECT Id FROM Clientes_web WHERE Telefono = $1',
-      [telefono]
+      'SELECT Id FROM Clientes_web WHERE Telefono = $1', [telefono]
     );
     if (dup.rows && dup.rows.length > 0)
       return new Response(JSON.stringify({ success: false, message: 'Ya existe un registro con ese teléfono.' }), { status: 409, headers });
 
-    // Insertar
     await query(
-      'INSERT INTO Clientes_web (Nombres, Apellidos, Correo, Telefono, Mensaje) VALUES ($1, $2, $3, $4, $5)',
+      'INSERT INTO Clientes_web (Nombres, Apellidos, Correo, Telefono, Mensaje) VALUES ($1,$2,$3,$4,$5)',
       [nombres, apellidos, correo, telefono, mensaje]
     );
 
@@ -91,3 +85,4 @@ export default async function handler(req) {
     return new Response(JSON.stringify({ success: false, message: 'Error: ' + err.message }), { status: 500, headers });
   }
 }
+
