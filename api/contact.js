@@ -1,3 +1,6 @@
+// Usando import desde CDN de esm.sh — funciona en Edge sin npm install
+import { neon } from 'https://esm.sh/@neondatabase/serverless@0.9.5';
+
 export const config = { runtime: 'edge' };
 
 export default async function handler(req) {
@@ -33,30 +36,9 @@ export default async function handler(req) {
     return new Response(JSON.stringify({ success: false, message: 'DATABASE_URL no configurada.' }), { status: 500, headers });
 
   try {
-    const u    = new URL(dbUrl);
-    const user = decodeURIComponent(u.username);
-    const pass = decodeURIComponent(u.password);
+    const sql = neon(dbUrl);
 
-    // Quitar "-pooler" del host para la HTTP API
-    const host = u.hostname.replace('-pooler', '');
-
-    const neonApi = `https://${host}/sql`;
-
-    async function query(sql, params = []) {
-      const r = await fetch(neonApi, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Basic ' + btoa(`${user}:${pass}`),
-        },
-        body: JSON.stringify({ query: sql, params }),
-      });
-      const text = await r.text();
-      if (!r.ok) throw new Error(`Neon ${r.status}: ${text}`);
-      return JSON.parse(text);
-    }
-
-    await query(`
+    await sql`
       CREATE TABLE IF NOT EXISTS Clientes_web (
         Id        SERIAL PRIMARY KEY,
         Nombres   VARCHAR(120) NOT NULL,
@@ -66,23 +48,20 @@ export default async function handler(req) {
         Mensaje   TEXT         NOT NULL,
         Fecha     TIMESTAMPTZ  DEFAULT NOW()
       )
-    `);
+    `;
 
-    const dup = await query(
-      'SELECT Id FROM Clientes_web WHERE Telefono = $1', [telefono]
-    );
-    if (dup.rows && dup.rows.length > 0)
+    const dup = await sql`SELECT Id FROM Clientes_web WHERE Telefono = ${telefono}`;
+    if (dup.length > 0)
       return new Response(JSON.stringify({ success: false, message: 'Ya existe un registro con ese teléfono.' }), { status: 409, headers });
 
-    await query(
-      'INSERT INTO Clientes_web (Nombres, Apellidos, Correo, Telefono, Mensaje) VALUES ($1,$2,$3,$4,$5)',
-      [nombres, apellidos, correo, telefono, mensaje]
-    );
+    await sql`
+      INSERT INTO Clientes_web (Nombres, Apellidos, Correo, Telefono, Mensaje)
+      VALUES (${nombres}, ${apellidos}, ${correo}, ${telefono}, ${mensaje})
+    `;
 
     return new Response(JSON.stringify({ success: true, message: '¡Mensaje enviado exitosamente!' }), { status: 200, headers });
 
   } catch (err) {
-    return new Response(JSON.stringify({ success: false, message: 'Error: ' + err.message }), { status: 500, headers });
+    return new Response(JSON.stringify({ success: false, message: 'Error DB: ' + err.message }), { status: 500, headers });
   }
 }
-
