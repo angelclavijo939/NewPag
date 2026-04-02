@@ -1,23 +1,19 @@
-// Usando import desde CDN de esm.sh — funciona en Edge sin npm install
-import { neon } from 'https://esm.sh/@neondatabase/serverless@0.9.5';
+const { neon } = require('@neondatabase/serverless');
 
-export const config = { runtime: 'edge' };
+module.exports = async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Content-Type', 'application/json');
 
-export default async function handler(req) {
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Content-Type': 'application/json',
-  };
-
-  if (req.method === 'OPTIONS') return new Response(null, { status: 200, headers });
+  if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')
-    return new Response(JSON.stringify({ success: false, message: 'Método no permitido.' }), { status: 405, headers });
+    return res.status(405).json({ success: false, message: 'Método no permitido.' });
 
-  let body;
-  try { body = await req.json(); }
-  catch { return new Response(JSON.stringify({ success: false, message: 'Body inválido.' }), { status: 400, headers }); }
+  let body = req.body || {};
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body); } catch { body = {}; }
+  }
 
   const nombres   = String(body.nombres   || '').trim().toUpperCase();
   const apellidos = String(body.apellidos || '').trim().toUpperCase();
@@ -26,14 +22,14 @@ export default async function handler(req) {
   const mensaje   = String(body.mensaje   || '').trim();
 
   if (!nombres || !apellidos || !correo || !telefono || !mensaje)
-    return new Response(JSON.stringify({ success: false, message: 'Todos los campos son obligatorios.' }), { status: 400, headers });
+    return res.status(400).json({ success: false, message: 'Todos los campos son obligatorios.' });
 
   if (!/\S+@\S+\.\S+/.test(correo))
-    return new Response(JSON.stringify({ success: false, message: 'Correo inválido.' }), { status: 400, headers });
+    return res.status(400).json({ success: false, message: 'Correo inválido.' });
 
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl)
-    return new Response(JSON.stringify({ success: false, message: 'DATABASE_URL no configurada.' }), { status: 500, headers });
+    return res.status(500).json({ success: false, message: 'DATABASE_URL no configurada.' });
 
   try {
     const sql = neon(dbUrl);
@@ -52,16 +48,17 @@ export default async function handler(req) {
 
     const dup = await sql`SELECT Id FROM Clientes_web WHERE Telefono = ${telefono}`;
     if (dup.length > 0)
-      return new Response(JSON.stringify({ success: false, message: 'Ya existe un registro con ese teléfono.' }), { status: 409, headers });
+      return res.status(409).json({ success: false, message: 'Ya existe un registro con ese teléfono.' });
 
     await sql`
       INSERT INTO Clientes_web (Nombres, Apellidos, Correo, Telefono, Mensaje)
       VALUES (${nombres}, ${apellidos}, ${correo}, ${telefono}, ${mensaje})
     `;
 
-    return new Response(JSON.stringify({ success: true, message: '¡Mensaje enviado exitosamente!' }), { status: 200, headers });
+    return res.status(200).json({ success: true, message: '¡Mensaje enviado exitosamente!' });
 
   } catch (err) {
-    return new Response(JSON.stringify({ success: false, message: 'Error DB: ' + err.message }), { status: 500, headers });
+    return res.status(500).json({ success: false, message: 'Error DB: ' + err.message });
   }
-}
+};
+
