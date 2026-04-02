@@ -1,94 +1,88 @@
-// api/contact.js — CommonJS (sin import/export)
-const { Pool } = require('@neondatabase/serverless');
+export const config = { runtime: 'edge' };
 
-module.exports = async function handler(req, res) {
-  // CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+export default async function handler(req) {
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Content-Type': 'application/json',
+  };
 
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ success: false, message: 'Método no permitido.' });
+  if (req.method === 'OPTIONS')
+    return new Response(null, { status: 200, headers });
 
-  // ── Leer body ──────────────────────────────────────────────
-  let body = req.body;
-  if (typeof body === 'string') {
-    try { body = JSON.parse(body); } catch { body = Object.fromEntries(new URLSearchParams(body)); }
-  }
+  if (req.method !== 'POST')
+    return new Response(JSON.stringify({ success: false, message: 'Método no permitido.' }), { status: 405, headers });
 
-  const nombres   = (body.nombres   || '').trim().toUpperCase();
-  const apellidos = (body.apellidos || '').trim().toUpperCase();
-  const correo    = (body.correo    || '').trim();
-  const telefono  = (body.telefono  || '').trim();
-  const mensaje   = (body.mensaje   || '').trim();
+  let body;
+  try { body = await req.json(); }
+  catch { return new Response(JSON.stringify({ success: false, message: 'Body inválido.' }), { status: 400, headers }); }
 
-  // ── Validaciones ───────────────────────────────────────────
+  const nombres   = String(body.nombres   || '').trim().toUpperCase();
+  const apellidos = String(body.apellidos || '').trim().toUpperCase();
+  const correo    = String(body.correo    || '').trim();
+  const telefono  = String(body.telefono  || '').trim();
+  const mensaje   = String(body.mensaje   || '').trim();
+
   if (!nombres || !apellidos || !correo || !telefono || !mensaje)
-    return res.status(400).json({ success: false, message: 'Todos los campos son obligatorios.' });
+    return new Response(JSON.stringify({ success: false, message: 'Todos los campos son obligatorios.' }), { status: 400, headers });
 
   if (!/\S+@\S+\.\S+/.test(correo))
-    return res.status(400).json({ success: false, message: 'Correo electrónico inválido.' });
+    return new Response(JSON.stringify({ success: false, message: 'Correo electrónico inválido.' }), { status: 400, headers });
 
-  if (!/^[0-9+\s\-]{7,20}$/.test(telefono))
-    return res.status(400).json({ success: false, message: 'Teléfono inválido.' });
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl)
+    return new Response(JSON.stringify({ success: false, message: 'DATABASE_URL no configurada.' }), { status: 500, headers });
 
-  // ── DB ─────────────────────────────────────────────────────
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  // Usar Neon HTTP API directamente — sin paquetes npm
+  const neonUrl = dbUrl
+    .replace('postgres://', 'https://')
+    .replace('postgresql://', 'https://')
+    .replace(/\/([^/?]+)(\?.*)?$/, '/sql');
+
+  const credentials = dbUrl.match(/\/\/([^@]+)@/)?.[1] || '';
+  const authHeader  = 'Basic ' + btoa(credentials);
+
+  async function query(sql, params = []) {
+    const r = await fetch(neonUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': authHeader,
+      },
+      body: JSON.stringify({ query: sql, params }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  }
 
   try {
-    // Crear tabla si no existe
-    await pool.query(`
+    await query(`
       CREATE TABLE IF NOT EXISTS Clientes_web (
-        Id        SERIAL PRIMARY KEY,
-        Nombres   VARCHAR(120) NOT NULL,
+        Id SERIAL PRIMARY KEY,
+        Nombres VARCHAR(120) NOT NULL,
         Apellidos VARCHAR(120) NOT NULL,
-        Correo    VARCHAR(200) NOT NULL,
-        Telefono  VARCHAR(30)  NOT NULL UNIQUE,
-        Mensaje   TEXT         NOT NULL,
-        Fecha     TIMESTAMPTZ  DEFAULT NOW()
+        Correo VARCHAR(200) NOT NULL,
+        Telefono VARCHAR(30) NOT NULL UNIQUE,
+        Mensaje TEXT NOT NULL,
+        Fecha TIMESTAMPTZ DEFAULT NOW()
       )
     `);
 
-    // Verificar teléfono duplicado
-    const dup = await pool.query('SELECT Id FROM Clientes_web WHERE Telefono = $1', [telefono]);
-    if (dup.rowCount > 0)
-      return res.status(409).json({ success: false, message: 'Ya existe un registro con ese número de teléfono.' });
+    const dup = await query('SELECT Id FROM Clientes_web WHERE Telefono = $1', [telefono]);
+    if (dup.rows?.length > 0)
+      return new Response(JSON.stringify({ success: false, message: 'Ya existe un registro con ese teléfono.' }), { status: 409, headers });
 
-    // Insertar
-    await pool.query(
-      'INSERT INTO Clientes_web (Nombres, Apellidos, Correo, Telefono, Mensaje) VALUES ($1,$2,$3,$4,$5)',
+    await query(
+      'INSERT INTO Clientes_web (Nombres,Apellidos,Correo,Telefono,Mensaje) VALUES ($1,$2,$3,$4,$5)',
       [nombres, apellidos, correo, telefono, mensaje]
     );
 
-    // ── Email (usando Resend — gratis hasta 3000/mes) ────────
-    // Si no quieres usar Resend, borra este bloque.
-    if (process.env.RESEND_API_KEY) {
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      await resend.emails.send({
-        from:    'Nexus Tech <noreply@ac-consulting.cloud>',
-        to:      'angel.clavijo@yahoo.es',
-        subject: `Nuevo contacto: ${nombres} ${apellidos}`,
-        html: `
-          <div style="font-family:sans-serif;background:#0A0A0A;color:#fff;padding:32px;border-radius:12px">
-            <h2 style="color:#CC5500;margin-bottom:24px">🚀 Nuevo Lead — Nexus Tech</h2>
-            <table style="width:100%;border-collapse:collapse">
-              <tr><td style="padding:10px;color:#8899AA;width:120px">Nombres</td>  <td style="padding:10px">${nombres}</td></tr>
-              <tr><td style="padding:10px;color:#8899AA">Apellidos</td><td style="padding:10px">${apellidos}</td></tr>
-              <tr><td style="padding:10px;color:#8899AA">Correo</td>   <td style="padding:10px">${correo}</td></tr>
-              <tr><td style="padding:10px;color:#8899AA">Teléfono</td> <td style="padding:10px">${telefono}</td></tr>
-              <tr><td style="padding:10px;color:#8899AA">Mensaje</td>  <td style="padding:10px">${mensaje}</td></tr>
-            </table>
-          </div>
-        `
-      });
-    }
-
-    return res.status(200).json({ success: true, message: '¡Mensaje enviado exitosamente!' });
+    return new Response(JSON.stringify({ success: true, message: '¡Mensaje enviado exitosamente!' }), { status: 200, headers });
 
   } catch (err) {
-    console.error('DB Error:', err.message);
-    return res.status(500).json({ success: false, message: 'Error interno. Inténtalo de nuevo.' });
-  } finally {
-    await pool.end();
+    console.error(err);
+    return new Response(JSON.stringify({ success: false, message: 'Error: ' + err.message }), { status: 500, headers });
   }
 }
+
